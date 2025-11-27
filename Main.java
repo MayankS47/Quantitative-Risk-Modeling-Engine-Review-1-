@@ -1,4 +1,56 @@
 import java.util.*;
+import java.io.*;
+
+// ---------------- SIMULATED JDBC CLASSES (Compiler Safe) ----------------
+
+// Simple interface representing JDBC-like operations
+interface DatabaseOperations {
+    void connect() throws IOException;
+    void insertLog(String msg);
+    void disconnect();
+}
+
+// Simulated DB connection class
+class DBManager implements DatabaseOperations {
+
+    private boolean connected = false;
+
+    @Override
+    public void connect() throws IOException {
+        connected = true;
+        System.out.println("[DB] Connected (Simulated)");
+    }
+
+    @Override
+    public void insertLog(String msg) {
+        if (!connected) {
+            System.out.println("[DB] Not connected. Cannot log.");
+            return;
+        }
+        System.out.println("[DB] LOG: " + msg);
+    }
+
+    @Override
+    public void disconnect() {
+        connected = false;
+        System.out.println("[DB] Disconnected (Simulated)");
+    }
+}
+
+// DAO class using Generics
+class StockDAO<T> {
+    private final List<T> items = Collections.synchronizedList(new ArrayList<>());
+
+    public void save(T item) {
+        items.add(item);
+    }
+
+    public List<T> getAll() {
+        return items;
+    }
+}
+
+
 
 // ----------- Stock Class (Represents a single stock) -------------
 // This class stores a stock symbol and its current price.
@@ -30,6 +82,17 @@ class Stock {
     }
 }
 
+
+
+// OOP Extension: A special type of stock using inheritance
+class TechStock extends Stock {
+    public TechStock(String s, double p) {
+        super(s, p);
+    }
+}
+
+
+
 // ----------- Portfolio Class (Holds stock quantities) -------------
 // This class stores how many shares of each stock the user owns.
 // It also stores an initial capital reference for risk evaluation.
@@ -54,6 +117,8 @@ class Portfolio {
     }
 }
 
+
+
 // ----------- Market Class (Simulates daily/stress price changes) -------------
 // Market stores stock prices and simulates random price movements
 class Market {
@@ -63,14 +128,14 @@ class Market {
 
     // Constructor initializes market with real-like stock prices
     public Market(){
-        stocks.put("AAPL", new Stock("AAPL",185));
-        stocks.put("GOOG", new Stock("GOOG",135));
+        stocks.put("AAPL", new TechStock("AAPL",185)); // Using inheritance
+        stocks.put("GOOG", new TechStock("GOOG",135));
         stocks.put("TSLA", new Stock("TSLA",240));
         stocks.put("AMZN", new Stock("AMZN",145));
     }
 
     // Applies random price movement based on volatility level
-    public void applyStress(double vol){
+    public synchronized void applyStress(double vol){
 
         // For each stock, apply new price using Gaussian movement
         for(Stock s : stocks.values()){
@@ -93,6 +158,8 @@ class Market {
         return stocks.get(sym); 
     }
 }
+
+
 
 // ----------- RiskModeler Class (Runs Monte Carlo risk simulation) -------------
 // This class calculates the total portfolio value and finds the worst-case drawdown
@@ -152,42 +219,84 @@ class RiskModeler {
     }
 }
 
+
+
+// ----------- Multithreading Class -------------
+class SimulationThread extends Thread {
+
+    private final Market market;
+    private final double vol;
+
+    public SimulationThread(Market m, double v) {
+        this.market = m;
+        this.vol = v;
+    }
+
+    @Override
+    public void run() {
+        market.applyStress(vol);
+        System.out.println("[Thread] Stress applied with vol = " + vol);
+    }
+}
+
+
+
 // ----------- Main Class (Driver Program) -------------
 public class Main {
 
     public static void main(String[] args){
 
-        // Create market
-        Market m = new Market();
+        try {
+            // Create simulated DB manager
+            DBManager db = new DBManager();
+            db.connect();
+            db.insertLog("Risk simulation started");
 
-        // Create portfolio with fixed holdings
-        Map<String,Integer> h = Map.of(
-            "AAPL", 50,
-            "GOOG", 10,
-            "TSLA", 20
-        );
+            // Create market
+            Market m = new Market();
 
-        // Create portfolio object
-        Portfolio p = new Portfolio(h);
+            // Create portfolio with fixed holdings
+            Map<String,Integer> h = Map.of(
+                "AAPL", 50,
+                "GOOG", 10,
+                "TSLA", 20
+            );
 
-        // Create risk model
-        RiskModeler rm = new RiskModeler(p, m);
+            // Create portfolio object
+            Portfolio p = new Portfolio(h);
 
-        // Calculate initial portfolio value
-        double init = rm.value();
-        System.out.println("Initial Value: $" + init);
+            // Create risk model
+            RiskModeler rm = new RiskModeler(p, m);
 
-        // Run Monte Carlo with normal volatility
-        double normal = rm.monteCarlo(1000, 0.02);
-        System.out.println("Normal Max Drawdown: " + normal + "%");
+            // Create DAO and store a stock in it
+            StockDAO<Stock> dao = new StockDAO<>();
+            dao.save(new Stock("TEST", 100));
 
-        // Run Monte Carlo with high volatility
-        double stress = rm.monteCarlo(1000, 0.05);
-        System.out.println("Stress Max Drawdown: " + stress + "%");
+            // Multithreading example
+            SimulationThread t1 = new SimulationThread(m, 0.02);
+            t1.start();
+            t1.join();
 
-        // Print risk message
-        System.out.println(stress > 15 ? "High Risk!" : "Risk Acceptable");
+            // Calculate initial portfolio value
+            double init = rm.value();
+            System.out.println("Initial Value: $" + init);
+
+            // Run Monte Carlo with normal volatility
+            double normal = rm.monteCarlo(200, 0.02);
+            System.out.println("Normal Max Drawdown: " + normal + "%");
+
+            // Run Monte Carlo with high volatility
+            double stress = rm.monteCarlo(200, 0.05);
+            System.out.println("Stress Max Drawdown: " + stress + "%");
+
+            // Print risk message
+            System.out.println(stress > 15 ? "High Risk!" : "Risk Acceptable");
+
+            db.insertLog("Simulation completed");
+            db.disconnect();
+
+        } catch (Exception e) {
+            System.out.println("ERROR: " + e.getMessage());
+        }
     }
 }
-
-
